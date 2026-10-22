@@ -1,0 +1,22 @@
+meta {
+  name: Add review
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/products/{{productId}}/reviews
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "rating": 5,
+    "comment": "Created from Bruno"
+  }
+}

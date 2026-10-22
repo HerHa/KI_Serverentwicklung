@@ -142,6 +142,28 @@ Bewertungen lassen sich über `POST /products/{id}/reviews` anlegen und über
 `GET /products/{id}/reviews` abrufen. Details eines Produkts werden über
 `POST /products` angelegt und in Produktantworten mitgeliefert.
 
+## Mit Bruno testen
+
+Die Bruno-Collection liegt in `bruno/Web Shop`. Öffne Bruno, wähle **Open
+Collection** und öffne diesen Ordner. Wähle anschließend die Umgebung `local`.
+Sie verwendet `http://127.0.0.1:8000`; starte dafür zuerst den API-Server wie
+oben beschrieben.
+
+Zum Durchspielen des Ablaufs die Requests in dieser Reihenfolge senden:
+
+1. `02 - Create product` legt ein Demo-Produkt an und speichert Produkt-ID sowie
+   ETag als Collection-Umgebungsvariablen.
+2. `03 - Get product` aktualisiert den gespeicherten ETag.
+3. `04 - Conditional GET` sendet den ETag als `If-None-Match`; bei unverändertem
+   Produkt antwortet die API mit `304 Not Modified`.
+4. `05 - Update product` sendet den ETag als `If-Match` und speichert nach
+   erfolgreichem Update den neuen ETag.
+5. `06 - Add review` und `07 - List reviews` testen die Produktbewertungen.
+
+`02 - Create product` ist als Demo-Aufruf einmalig gedacht, da der Produktname
+in der Datenbank eindeutig sein muss. Für einen erneuten Durchlauf den Namen im
+Request-Body ändern.
+
 Die Verbindung erfolgt über `localhost:5432` mit TLS. Zum Stoppen der gemeinsam
 genutzten PostgreSQL-Instanz:
 
