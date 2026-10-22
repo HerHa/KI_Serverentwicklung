@@ -49,6 +49,7 @@ class ProductResponse(BaseModel):
     description: str
     price: Decimal
     stock: int
+    version: int
     detail: ProductDetailResponse | None
 
 

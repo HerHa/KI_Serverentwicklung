@@ -9,9 +9,10 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.exc import StaleDataError
 from starlette import status
 
 from web_shop.db import create_engine_from_env, create_session_factory
@@ -151,6 +152,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     def update_product(
         product_id: int,
         product_input: ProductUpdate,
+        response: Response,
         session: Annotated[Session, Depends(get_session)],
         if_match: Annotated[str | None, Header()] = None,
     ) -> ProductResponse:
@@ -164,7 +166,6 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             select(Product)
             .options(selectinload(Product.detail))
             .where(Product.id == product_id)
-            .with_for_update()
         )
         if product is None:
             raise HTTPException(
@@ -179,29 +180,11 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 detail="Product has changed; fetch it again before updating",
             )
 
-        updated_id = session.execute(
-            update(Product)
-            .where(
-                Product.id == product_id,
-                Product.name == product.name,
-                Product.description == product.description,
-                Product.price == product.price,
-                Product.stock == product.stock,
-            )
-            .values(
-                name=product_input.name,
-                description=product_input.description,
-                price=product_input.price,
-                stock=product_input.stock,
-            )
-            .returning(Product.id)
-        ).scalar_one_or_none()
-        if updated_id is None:
-            session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_412_PRECONDITION_FAILED,
-                detail="Product changed during update; fetch it again before retrying",
-            )
+        product.name = product_input.name
+        product.description = product_input.description
+        product.price = product_input.price
+        product.stock = product_input.stock
+        product.version += 1
 
         if product_input.detail is None:
             product.detail = None
@@ -211,9 +194,18 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             product.detail.material = product_input.detail.material
             product.detail.dimensions = product_input.detail.dimensions
 
-        session.commit()
-        session.expire(product)
-        return _product_payload(product)
+        try:
+            session.commit()
+        except StaleDataError as exc:
+            session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_412_PRECONDITION_FAILED,
+                detail="Product changed during update; fetch it again before retrying",
+            ) from exc
+
+        payload = _product_payload(product)
+        response.headers["ETag"] = _etag_for(payload.model_dump(mode="json"))
+        return payload
 
     @application.get(
         "/products/{product_id}/reviews",

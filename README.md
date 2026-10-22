@@ -4,6 +4,7 @@ Minimaler Webshop-Server mit FastAPI, Pydantic, SQLAlchemy und PostgreSQL.
 Die API bietet Produkt-GETs mit Query-Parametern und ETags, POST mit
 Pydantic-Validierung sowie PUT mit `If-Match`-Schutz vor Lost Updates.
 Ein Produkt kann optionale 1:1-Details und mehrere 1:N-Bewertungen besitzen.
+Produktänderungen verwenden eine Versionsnummer für optimistische Sperrung.
 
 ## PostgreSQL verbinden und Beispieldaten laden
 
@@ -65,6 +66,31 @@ Das Seed-Kommando legt die Tabellen an und fügt die drei Beispieldatensätze nu
 ein, wenn noch keine Produkte existieren. Die Beispieldaten sind in
 `src/web_shop/seed.py` definiert.
 
+### Bestehende Datenbank aktualisieren
+
+`create_all()` erstellt fehlende Tabellen, ergänzt aber keine Spalten in
+bestehenden Tabellen. Daher vor dem nächsten API-Start einmal die Migration
+`migrations/001_add_product_version.sql` in der Datenbank `web_shop` ausführen.
+Die Verbindung muss das Schema `public` verwenden. Im SQL-Editor zuerst prüfen:
+
+```sql
+SELECT current_database(), current_schema();
+```
+
+Das Ergebnis muss `web_shop` und `public` sein. Danach die Migration ausführen;
+sie fügt für vorhandene Produkte die Spalte `version` mit Startwert `1` hinzu.
+Anschließend lässt sich die Spalte so prüfen:
+
+```sql
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'product'
+ORDER BY ordinal_position;
+```
+
+Bei einer neuen Datenbank ist diese manuelle Migration nicht nötig.
+
 ## API starten und testen
 
 Die API starten:
@@ -98,7 +124,11 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/products" `
 als `If-None-Match` senden; bei unverändertem Inhalt antwortet die API mit
 `304 Not Modified`. Für `PUT /products/{id}` ist ein aktueller `If-Match`-ETag
 Pflicht. Fehlt er, kommt `428 Precondition Required`; ist der Datensatz
-zwischenzeitlich geändert worden, kommt `412 Precondition Failed`.
+zwischenzeitlich geändert worden, kommt `412 Precondition Failed`. Die
+Produktantwort enthält außerdem `version`: Sie beginnt bei `1` und wird bei
+jedem erfolgreichen PUT erhöht. SQLAlchemy schreibt die Änderung nur, wenn die
+Version seit dem Laden der Session unverändert ist; die PUT-Antwort liefert den
+neuen ETag für das nächste Update zurück.
 
 Tests sowie Ruff- und Ty-Prüfung:
 

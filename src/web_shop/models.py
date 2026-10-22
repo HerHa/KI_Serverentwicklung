@@ -22,6 +22,12 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     stock: Mapped[int] = mapped_column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     detail: Mapped[ProductDetail | None] = relationship(
         back_populates="product",
         cascade="all, delete-orphan",
@@ -33,6 +39,11 @@ class Product(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    __mapper_args__ = {
+        "version_id_col": version,
+        "version_id_generator": False,
+    }
 
 
 class ProductDetail(Base):
