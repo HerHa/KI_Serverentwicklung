@@ -1,0 +1,32 @@
+meta {
+  name: Create product
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/products
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Bruno Demo Mug",
+    "description": "A product created from the Bruno collection",
+    "price": 8.90,
+    "stock": 25,
+    "detail": {
+      "material": "Ceramic",
+      "dimensions": "300 ml"
+    }
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("productId", res.body.id);
+}

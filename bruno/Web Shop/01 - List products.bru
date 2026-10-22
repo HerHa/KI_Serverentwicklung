@@ -1,0 +1,11 @@
+meta {
+  name: List products
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/products?limit=20&offset=0
+  body: none
+  auth: none
+}

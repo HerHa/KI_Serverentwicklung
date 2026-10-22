@@ -1,0 +1,33 @@
+meta {
+  name: Update product
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/products/{{productId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  If-Match: {{productEtag}}
+}
+
+body:json {
+  {
+    "name": "Laptop Tasche",
+    "description": "Eine Wasserabweisende Laptoptasche für kleine (11' Zoll) Laptops",
+    "price": 9.50,
+    "stock": 4,
+    "detail": {
+      "material": "Polymer",
+      "dimensions": "11 Zoll"
+    }
+  }
+}
+
+script:post-response {
+  bru.setEnvVar("productEtag", res.getHeader("etag"));
+}

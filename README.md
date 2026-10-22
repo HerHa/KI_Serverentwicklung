@@ -1,7 +1,10 @@
 # KI_Serverentwicklung
 
-Kleine Python-Anwendung mit PostgreSQL und SQLAlchemy. Die Datenbankbasis wird
-zunächst ohne REST-Schnittstelle aufgebaut.
+Minimaler Webshop-Server mit FastAPI, Pydantic, SQLAlchemy und PostgreSQL.
+Die API bietet Produkt-GETs mit Query-Parametern und ETags, POST mit
+Pydantic-Validierung sowie PUT mit `If-Match`-Schutz vor Lost Updates.
+Ein Produkt kann optionale 1:1-Details und mehrere 1:N-Bewertungen besitzen.
+Produktänderungen verwenden eine Versionsnummer für optimistische Sperrung.
 
 ## PostgreSQL verbinden und Beispieldaten laden
 
@@ -55,13 +58,121 @@ sich an die vorhandene Konfiguration an, ohne das Image zu ändern.
    laden:
 
    ```powershell
-   uv sync
+   uv sync --all-groups
    uv run --env-file .env python -m web_shop.seed
    ```
 
-Das Seed-Kommando legt die Tabelle `product` in der Datenbank `web_shop` an.
-Wenn sie bereits Datensätze enthält, fügt es keine weiteren Beispieldaten hinzu.
-Die Beispieldaten sind in `src/web_shop/seed.py` definiert.
+Das Seed-Kommando legt die Tabellen an und fügt die drei Beispieldatensätze nur
+ein, wenn noch keine Produkte existieren. Die Beispieldaten sind in
+`src/web_shop/seed.py` definiert.
+
+### Bestehende Datenbank aktualisieren
+
+`create_all()` erstellt fehlende Tabellen, ergänzt aber keine Spalten in
+bestehenden Tabellen. Daher vor dem nächsten API-Start einmal die Migration
+`migrations/001_add_product_version.sql` in der Datenbank `web_shop` ausführen.
+Die Verbindung muss das Schema `public` verwenden. Im SQL-Editor zuerst prüfen:
+
+```sql
+SELECT current_database(), current_schema();
+```
+
+Das Ergebnis muss `web_shop` und `public` sein. Danach die Migration ausführen;
+sie fügt für vorhandene Produkte die Spalte `version` mit Startwert `1` hinzu.
+Anschließend lässt sich die Spalte so prüfen:
+
+```sql
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'product'
+ORDER BY ordinal_position;
+```
+
+Bei einer neuen Datenbank ist diese manuelle Migration nicht nötig.
+
+## API starten und testen
+
+Die API starten:
+
+```powershell
+uv run --env-file .env uvicorn web_shop.app:app --reload
+```
+
+Danach sind die interaktive API-Dokumentation und die OpenAPI-Spezifikation unter
+`http://127.0.0.1:8000/docs` bzw. `/openapi.json` erreichbar.
+
+Beispiele:
+
+```powershell
+# Produkte mit Query-Parametern filtern und paginieren
+Invoke-RestMethod "http://127.0.0.1:8000/products?name=Kaffee&limit=10"
+
+# Ein Produkt anlegen; Details sind optional
+$body = @{
+    name = "Thermobecher"
+    description = "Isolierbecher aus Edelstahl"
+    price = 19.90
+    stock = 12
+    detail = @{ material = "Edelstahl"; dimensions = "500 ml" }
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/products" `
+    -ContentType "application/json" -Body $body
+```
+
+`GET /products/{id}` liefert einen `ETag`. Für einen bedingten GET diesen Wert
+als `If-None-Match` senden; bei unverändertem Inhalt antwortet die API mit
+`304 Not Modified`. Für `PUT /products/{id}` ist ein aktueller `If-Match`-ETag
+Pflicht. Fehlt er, kommt `428 Precondition Required`; ist der Datensatz
+zwischenzeitlich geändert worden, kommt `412 Precondition Failed`. Die
+Produktantwort enthält außerdem `version`: Sie beginnt bei `1` und wird bei
+jedem erfolgreichen PUT erhöht. SQLAlchemy schreibt die Änderung nur, wenn die
+Version seit dem Laden der Session unverändert ist; die PUT-Antwort liefert den
+neuen ETag für das nächste Update zurück.
+
+Tests sowie Ruff- und Ty-Prüfung:
+
+```powershell
+uv run pytest
+uv run ruff check .
+uv run ty check
+```
+
+Die schnellen API-Tests verwenden SQLite. Für den End-to-End-Test gegen
+PostgreSQL zuerst sicherstellen, dass `DATABASE_URL` in `.env` auf die
+Projekt-Datenbank zeigt. Der Integrationstest legt darin ein zufällig benanntes
+temporäres Schema an und löscht nach dem Test ausschließlich dieses Schema;
+die Tabellen und Daten in `public` bleiben unberührt:
+
+```powershell
+uv run --env-file .env pytest -m integration -q
+```
+
+Bewertungen lassen sich über `POST /products/{id}/reviews` anlegen und über
+`GET /products/{id}/reviews` abrufen. Details eines Produkts werden über
+`POST /products` angelegt und in Produktantworten mitgeliefert.
+
+## Mit Bruno testen
+
+Die Bruno-Collection liegt in `bruno/Web Shop`. Öffne Bruno, wähle **Open
+Collection** und öffne diesen Ordner. Wähle anschließend die Umgebung `local`.
+Sie verwendet `http://127.0.0.1:8000`; starte dafür zuerst den API-Server wie
+oben beschrieben.
+
+Zum Durchspielen des Ablaufs die Requests in dieser Reihenfolge senden:
+
+1. `02 - Create product` legt ein Demo-Produkt an und speichert Produkt-ID sowie
+   ETag als Collection-Umgebungsvariablen.
+2. `03 - Get product` aktualisiert den gespeicherten ETag.
+3. `04 - Conditional GET` sendet den ETag als `If-None-Match`; bei unverändertem
+   Produkt antwortet die API mit `304 Not Modified`.
+4. `05 - Update product` sendet den ETag als `If-Match` und speichert nach
+   erfolgreichem Update den neuen ETag.
+5. `06 - Add review` und `07 - List reviews` testen die Produktbewertungen.
+
+`02 - Create product` ist als Demo-Aufruf einmalig gedacht, da der Produktname
+in der Datenbank eindeutig sein muss. Für einen erneuten Durchlauf den Namen im
+Request-Body ändern.
 
 Die Verbindung erfolgt über `localhost:5432` mit TLS. Zum Stoppen der gemeinsam
 genutzten PostgreSQL-Instanz:
