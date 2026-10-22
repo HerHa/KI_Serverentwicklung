@@ -1,7 +1,9 @@
 # KI_Serverentwicklung
 
-Kleine Python-Anwendung mit PostgreSQL und SQLAlchemy. Die Datenbankbasis wird
-zunächst ohne REST-Schnittstelle aufgebaut.
+Minimaler Webshop-Server mit FastAPI, Pydantic, SQLAlchemy und PostgreSQL.
+Die API bietet Produkt-GETs mit Query-Parametern und ETags, POST mit
+Pydantic-Validierung sowie PUT mit `If-Match`-Schutz vor Lost Updates.
+Ein Produkt kann optionale 1:1-Details und mehrere 1:N-Bewertungen besitzen.
 
 ## PostgreSQL verbinden und Beispieldaten laden
 
@@ -55,13 +57,60 @@ sich an die vorhandene Konfiguration an, ohne das Image zu ändern.
    laden:
 
    ```powershell
-   uv sync
+   uv sync --all-groups
    uv run --env-file .env python -m web_shop.seed
    ```
 
-Das Seed-Kommando legt die Tabelle `product` in der Datenbank `web_shop` an.
-Wenn sie bereits Datensätze enthält, fügt es keine weiteren Beispieldaten hinzu.
-Die Beispieldaten sind in `src/web_shop/seed.py` definiert.
+Das Seed-Kommando legt die Tabellen an und fügt die drei Beispieldatensätze nur
+ein, wenn noch keine Produkte existieren. Die Beispieldaten sind in
+`src/web_shop/seed.py` definiert.
+
+## API starten und testen
+
+Die API starten:
+
+```powershell
+uv run --env-file .env uvicorn web_shop.app:app --reload
+```
+
+Danach sind die interaktive API-Dokumentation und die OpenAPI-Spezifikation unter
+`http://127.0.0.1:8000/docs` bzw. `/openapi.json` erreichbar.
+
+Beispiele:
+
+```powershell
+# Produkte mit Query-Parametern filtern und paginieren
+Invoke-RestMethod "http://127.0.0.1:8000/products?name=Kaffee&limit=10"
+
+# Ein Produkt anlegen; Details sind optional
+$body = @{
+    name = "Thermobecher"
+    description = "Isolierbecher aus Edelstahl"
+    price = 19.90
+    stock = 12
+    detail = @{ material = "Edelstahl"; dimensions = "500 ml" }
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/products" `
+    -ContentType "application/json" -Body $body
+```
+
+`GET /products/{id}` liefert einen `ETag`. Für einen bedingten GET diesen Wert
+als `If-None-Match` senden; bei unverändertem Inhalt antwortet die API mit
+`304 Not Modified`. Für `PUT /products/{id}` ist ein aktueller `If-Match`-ETag
+Pflicht. Fehlt er, kommt `428 Precondition Required`; ist der Datensatz
+zwischenzeitlich geändert worden, kommt `412 Precondition Failed`.
+
+Tests sowie Ruff- und Ty-Prüfung:
+
+```powershell
+uv run pytest
+uv run ruff check .
+uv run ty check
+```
+
+Bewertungen lassen sich über `POST /products/{id}/reviews` anlegen und über
+`GET /products/{id}/reviews` abrufen. Details eines Produkts werden über
+`POST /products` angelegt und in Produktantworten mitgeliefert.
 
 Die Verbindung erfolgt über `localhost:5432` mit TLS. Zum Stoppen der gemeinsam
 genutzten PostgreSQL-Instanz:
