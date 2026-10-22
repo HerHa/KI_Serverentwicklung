@@ -138,6 +138,16 @@ uv run ruff check .
 uv run ty check
 ```
 
+Die schnellen API-Tests verwenden SQLite. Für den End-to-End-Test gegen
+PostgreSQL zuerst sicherstellen, dass `DATABASE_URL` in `.env` auf die
+Projekt-Datenbank zeigt. Der Integrationstest legt darin ein zufällig benanntes
+temporäres Schema an und löscht nach dem Test ausschließlich dieses Schema;
+die Tabellen und Daten in `public` bleiben unberührt:
+
+```powershell
+uv run --env-file .env pytest -m integration -q
+```
+
 Bewertungen lassen sich über `POST /products/{id}/reviews` anlegen und über
 `GET /products/{id}/reviews` abrufen. Details eines Produkts werden über
 `POST /products` angelegt und in Produktantworten mitgeliefert.

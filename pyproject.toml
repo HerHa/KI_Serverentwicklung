@@ -43,3 +43,8 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ty.environment]
 python-version = "3.15"
 root = ["src", "tests"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that require a PostgreSQL connection from DATABASE_URL",
+]
